@@ -2,7 +2,7 @@
 import { httpGet, robotsAllowed, parseDate, sleep } from '../util.js';
 
 const BASE = 'https://jumpit-api.saramin.co.kr/api/positions';
-const PAGES = 15;
+const PAGES = 80; // 16건 × 최대 80페이지, 빈 페이지가 나오면 중단
 
 export default {
   id: 'jumpit',

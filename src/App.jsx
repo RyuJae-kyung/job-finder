@@ -37,7 +37,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [cats, setCats] = useState(new Set());
   const [regions, setRegions] = useState(new Set());
-  const [newOnly, setNewOnly] = useState(true);
+  const [newOnly, setNewOnly] = useState(false);
   const [favOnly, setFavOnly] = useState(false);
   const [sort, setSort] = useState('latest');
   const [limit, setLimit] = useState(PAGE_SIZE);
