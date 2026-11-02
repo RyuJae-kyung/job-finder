@@ -16,7 +16,6 @@ export default {
       const data = JSON.parse(await httpGet(url, { headers: { Accept: 'application/json' } }));
       const list = data?.result?.positions;
       if (!Array.isArray(list)) throw new Error('응답 형식이 예상과 다름');
-      console.log(`[jumpit] page ${page}: ${list.length}건 (전체 ${data?.result?.totalCount ?? '?'}건, 첫 id ${list[0]?.id})`);
       for (const j of list) {
         if (!j?.id || !j.title) continue;
         const min = j.minCareer;
@@ -32,7 +31,8 @@ export default {
           location: (j.locations || []).join(', '),
           experienceText,
           education: '',
-          requirements: (j.techStacks || []).slice(0, 6).join(', '),
+          requirements: '',
+          skills: (j.techStacks || []).filter((t) => typeof t === 'string'),
           salary: '',
           postedAt: null,
           deadline: j.alwaysOpen ? null : parseDate(j.closedAt),

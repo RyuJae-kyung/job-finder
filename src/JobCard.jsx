@@ -1,5 +1,7 @@
 import { CATEGORIES } from '../shared/taxonomy.js';
 import { daysLeft, formatDate } from './dates.js';
+import { MatchMeter } from './widgets.jsx';
+import { STAGES } from './usePipeline.js';
 
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
 export const URGENT_DAYS = 3;
@@ -21,7 +23,7 @@ function Row({ label, value }) {
   );
 }
 
-export default function JobCard({ job, isFav, onToggleFav, missing }) {
+export default function JobCard({ job, match, stage, onScrap }) {
   const d = daysLeft(job.deadline);
   const urgent = d !== null && d >= 0 && d <= URGENT_DAYS;
   const deadline = job.deadline ? formatDate(job.deadline) : job.deadlineText || '상시채용';
@@ -36,17 +38,7 @@ export default function JobCard({ job, isFav, onToggleFav, missing }) {
           <DeadlineBadge job={job} />
           {urgent && <span className="badge urgent solid">마감 임박</span>}
         </div>
-        {!job.sample && (
-          <button
-            className={`fav ${isFav ? 'on' : ''}`}
-            onClick={() => onToggleFav(job)}
-            aria-pressed={isFav}
-            aria-label={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-            title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-          >
-            {isFav ? '★' : '☆'}
-          </button>
-        )}
+        {match && <MatchMeter match={match} compact />}
       </header>
 
       <p className="company">{job.company}</p>
@@ -54,7 +46,7 @@ export default function JobCard({ job, isFav, onToggleFav, missing }) {
 
       <dl className="info">
         <Row label="근무지역" value={job.location} />
-        <Row label="학력·요건" value={edu} />
+        {job.skills?.length > 0 ? <Row label="기술 스택" value={job.skills.slice(0, 8).join(', ')} /> : <Row label="학력·요건" value={edu} />}
         <Row label="연봉" value={job.salary} />
         <Row label="등록일" value={formatDate(job.postedAt)} />
         <Row label="마감일" value={deadline} />
@@ -69,7 +61,19 @@ export default function JobCard({ job, isFav, onToggleFav, missing }) {
         </div>
       )}
 
-      {missing && <p className="note">현재 수집 목록에 없음 (마감되었거나 출처에서 내려갔을 수 있음)</p>}
+      {match && match.score !== null && (
+        <details className="match-detail">
+          <summary>매칭 상세</summary>
+          <MatchMeter match={match} />
+          <ul>
+            {match.parts.map((p) => (
+              <li key={p.key}>
+                <b>{p.label}</b> {p.detail}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <footer className="card-foot">
         {job.sample ? (
@@ -79,6 +83,9 @@ export default function JobCard({ job, isFav, onToggleFav, missing }) {
             <a className="btn primary" href={job.url} target="_blank" rel="noopener noreferrer">
               공고 상세 보기 ↗
             </a>
+            <button className={`btn ghost ${stage ? 'is-on' : ''}`} onClick={() => onScrap(job)} disabled={!!stage}>
+              {stage ? `✓ ${STAGES.find((s) => s.id === stage)?.label}` : '스크랩'}
+            </button>
             {job.alsoOn?.map((a) => (
               <a key={a.source} className="btn ghost" href={a.url} target="_blank" rel="noopener noreferrer">
                 {a.sourceLabel}에서 보기

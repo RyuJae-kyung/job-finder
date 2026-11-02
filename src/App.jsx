@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CATEGORIES, REGIONS, searchLinks } from '../shared/taxonomy.js';
 import JobCard from './JobCard.jsx';
-import { useFavorites } from './useFavorites.js';
+import { usePipeline } from './usePipeline.js';
+import { useProfile, computeMatch, hasProfile } from './profile.js';
+import { ProfilePanel, DailyReport, Kanban, Market } from './widgets.jsx';
 import { SAMPLE_JOBS } from './sampleJobs.js';
 import { formatDateTime } from './dates.js';
 
@@ -38,11 +40,13 @@ export default function App() {
   const [cats, setCats] = useState(new Set());
   const [regions, setRegions] = useState(new Set());
   const [newOnly, setNewOnly] = useState(false);
-  const [favOnly, setFavOnly] = useState(false);
-  const [sort, setSort] = useState('latest');
+  const [tab, setTab] = useState('jobs');
+  const [sort, setSort] = useState(() => (localStorage.getItem('jobfinder:profile') ? 'match' : 'latest'));
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [showSample, setShowSample] = useState(false);
-  const { favs, toggle } = useFavorites();
+  const pipeline = usePipeline();
+  const [profile, setProfile] = useProfile();
+  const profileOn = hasProfile(profile);
 
   const load = useCallback(async () => {
     try {
@@ -65,14 +69,28 @@ export default function App() {
     return () => clearInterval(t);
   }, [load]);
 
-  useEffect(() => setLimit(PAGE_SIZE), [query, cats, regions, newOnly, favOnly, sort]);
+  useEffect(() => setLimit(PAGE_SIZE), [query, cats, regions, newOnly, sort, profile]);
+  // 내 조건이 있으면 매칭률순으로 시작, 조건을 모두 지우면 최신순으로
+  useEffect(() => {
+    if (!profileOn && sort === 'match') setSort('latest');
+  }, [profileOn, sort]);
 
   const jobs = data?.jobs || [];
   const liveIds = useMemo(() => new Set(jobs.map((j) => j.id)), [jobs]);
   const usingSample = jobs.length === 0 && showSample;
+  const matches = useMemo(() => {
+    const m = new Map();
+    if (profileOn) for (const j of jobs) m.set(j.id, computeMatch(j, profile));
+    return m;
+  }, [jobs, profile, profileOn]);
+  const skillOptions = useMemo(() => {
+    const c = new Map();
+    for (const j of jobs) for (const s of j.skills || []) c.set(s, (c.get(s) || 0) + 1);
+    return [...c.entries()].sort((a, b) => b[1] - a[1]).slice(0, 150).map(([s]) => s);
+  }, [jobs]);
 
   const filtered = useMemo(() => {
-    let list = favOnly ? Object.values(favs) : usingSample ? SAMPLE_JOBS : jobs;
+    let list = usingSample ? SAMPLE_JOBS : jobs;
     const q = query.trim().toLowerCase();
     list = list.filter((j) => {
       if (q && !`${j.company} ${j.title}`.toLowerCase().includes(q)) return false;
@@ -83,6 +101,10 @@ export default function App() {
     });
     const latestKey = (j) => j.postedAt || j.collectedAt || '';
     return [...list].sort((a, b) => {
+      if (sort === 'match') {
+        const diff = (matches.get(b.id)?.score ?? -1) - (matches.get(a.id)?.score ?? -1);
+        if (diff) return diff;
+      }
       if (sort === 'deadline') {
         const da = a.deadline || '9999';
         const db = b.deadline || '9999';
@@ -90,12 +112,12 @@ export default function App() {
       }
       return latestKey(b).localeCompare(latestKey(a)) || (a.deadline || '9999').localeCompare(b.deadline || '9999');
     });
-  }, [jobs, favs, favOnly, usingSample, query, cats, regions, newOnly, sort]);
+  }, [jobs, usingSample, query, cats, regions, newOnly, sort, matches]);
 
   const linkKeyword = query.trim() || (cats.size === 1 ? CATEGORIES.find((c) => cats.has(c.id)).search : '신입 IT');
   const autoSources = (data?.sources || []).filter((s) => s.auto);
   const linkSources = (data?.sources || []).filter((s) => !s.auto);
-  const favCount = Object.keys(favs).length;
+  const pipeCount = Object.keys(pipeline.items).length;
 
   return (
     <div className="app">
@@ -150,6 +172,26 @@ export default function App() {
           </section>
         )}
 
+        <nav className="tabs" role="tablist">
+          {[
+            ['jobs', '채용공고'],
+            ['pipeline', `지원 현황 (${pipeCount})`],
+            ['market', '시장 동향'],
+          ].map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id} className={`tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {tab === 'pipeline' && <Kanban items={pipeline.items} move={pipeline.move} remove={pipeline.remove} liveIds={liveIds} />}
+        {tab === 'market' && <Market jobs={jobs} history={data?.history} profile={profile} />}
+
+        {tab === 'jobs' && (
+        <>
+        <ProfilePanel profile={profile} setProfile={setProfile} skillOptions={skillOptions} />
+        <DailyReport jobs={jobs} profile={profile} pipeline={pipeline.items} onScrap={pipeline.add} />
+
         <section className="controls">
           <div className="search-row">
             <input
@@ -160,6 +202,7 @@ export default function App() {
               onChange={(e) => setQuery(e.target.value)}
             />
             <select className="sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="정렬">
+              {profileOn && <option value="match">매칭률순</option>}
               <option value="latest">최신 등록순</option>
               <option value="deadline">마감 임박순</option>
             </select>
@@ -171,14 +214,10 @@ export default function App() {
               <input type="checkbox" checked={newOnly} onChange={(e) => setNewOnly(e.target.checked)} />
               신입 지원 가능 공고만 (신입 · 신입/경력 · 경력무관)
             </label>
-            <label className="toggle">
-              <input type="checkbox" checked={favOnly} onChange={(e) => setFavOnly(e.target.checked)} />
-              즐겨찾기만 보기 ({favCount})
-            </label>
           </div>
         </section>
 
-        {usingSample && !favOnly && (
+        {usingSample && (
           <div className="alert sample">
             <b>예시 데이터입니다.</b> 아래 카드는 화면 구성을 보여주기 위한 가상의 공고이며 실제 채용공고가 아닙니다.{' '}
             <button className="link-btn" onClick={() => setShowSample(false)}>
@@ -189,7 +228,7 @@ export default function App() {
 
         <div className="result-bar">
           <span>
-            {favOnly ? '즐겨찾기' : usingSample ? '예시' : '검색 결과'} <b>{filtered.length.toLocaleString()}</b>건
+            {usingSample ? '예시' : '검색 결과'} <b>{filtered.length.toLocaleString()}</b>건
           </span>
         </div>
 
@@ -197,7 +236,7 @@ export default function App() {
           <>
             <div className="grid">
               {filtered.slice(0, limit).map((job) => (
-                <JobCard key={job.id} job={job} isFav={!!favs[job.id]} onToggleFav={toggle} missing={favOnly && !liveIds.has(job.id)} />
+                <JobCard key={job.id} job={job} match={matches.get(job.id)} stage={pipeline.items[job.id]?.stage} onScrap={pipeline.add} />
               ))}
             </div>
             {filtered.length > limit && (
@@ -209,7 +248,7 @@ export default function App() {
         ) : (
           <div className="empty">
             {!data && !loadError && <p>공고를 불러오는 중…</p>}
-            {data && jobs.length === 0 && !favOnly && (
+            {data && jobs.length === 0 && (
               <>
                 <p>
                   <b>자동 수집된 채용공고가 없습니다.</b>
@@ -224,7 +263,7 @@ export default function App() {
                 )}
               </>
             )}
-            {data && (jobs.length > 0 || favOnly) && <p>조건에 맞는 공고가 없습니다. 필터를 줄이거나 아래 링크로 직접 검색해 보세요.</p>}
+            {data && jobs.length > 0 && <p>조건에 맞는 공고가 없습니다. 필터를 줄이거나 아래 링크로 직접 검색해 보세요.</p>}
           </div>
         )}
 
@@ -242,10 +281,12 @@ export default function App() {
             ))}
           </div>
         </section>
+        </>
+        )}
       </main>
 
       <footer className="foot wrap muted small">
-        공고 정보는 각 채용 사이트에 있으며, 지원 전 반드시 원문 공고를 확인하세요. 즐겨찾기는 이 브라우저에만 저장됩니다.
+        공고 정보는 각 채용 사이트에 있으며, 지원 전 반드시 원문 공고를 확인하세요. 내 조건과 지원 현황은 이 브라우저에만 저장됩니다.
       </footer>
     </div>
   );

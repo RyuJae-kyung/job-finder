@@ -52,6 +52,7 @@ function finalize(raw, today, prevById) {
     newcomerOk,
     education: raw.education || '',
     requirements: raw.requirements || '',
+    skills: [...new Set(raw.skills || [])],
     salary: raw.salary || '',
     postedAt: raw.postedAt || null,
     deadline: raw.deadline || null,
@@ -75,6 +76,7 @@ function dedupe(jobs) {
     for (const f of ['location', 'education', 'requirements', 'salary', 'postedAt', 'deadline']) if (!ex[f] && j[f]) ex[f] = j[f];
     if (ex.regions.length === 0) ex.regions = j.regions;
     ex.categories = [...new Set([...ex.categories, ...j.categories])];
+    ex.skills = [...new Set([...(ex.skills || []), ...(j.skills || [])])];
     if (!ex.newcomerOk && j.newcomerOk) Object.assign(ex, { newcomerOk: true, experience: j.experience });
     if (j.collectedAt < ex.collectedAt) ex.collectedAt = j.collectedAt;
     if (ex.source !== j.source && !ex.alsoOn.some((a) => a.source === j.source)) {
@@ -82,6 +84,30 @@ function dedupe(jobs) {
     }
   }
   return [...map.values()];
+}
+
+// 시장 동향용 일별 집계: 날짜별 공고 수와 직무별 기술 스택 언급 수를 최대 60일 보관
+function topCounts(items, n) {
+  const m = new Map();
+  for (const it of items) m.set(it, (m.get(it) || 0) + 1);
+  return Object.fromEntries([...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n));
+}
+
+function updateHistory(history, today, jobs) {
+  const byCat = {};
+  const totalByCat = {};
+  for (const j of jobs) {
+    for (const c of ['all', ...j.categories]) {
+      (byCat[c] ||= []).push(...(j.skills || []));
+      totalByCat[c] = (totalByCat[c] || 0) + 1;
+    }
+  }
+  const entry = {
+    date: today,
+    total: totalByCat,
+    skills: Object.fromEntries(Object.entries(byCat).map(([c, list]) => [c, topCounts(list, 30)])),
+  };
+  return [...history.filter((h) => h.date !== today), entry].sort((a, b) => a.date.localeCompare(b.date)).slice(-60);
 }
 
 async function main() {
@@ -121,8 +147,10 @@ async function main() {
   for (const j of collected) if (!byId.has(j.id)) byId.set(j.id, j);
   const jobs = dedupe([...byId.values()].filter(notExpired));
 
+  const history = updateHistory(prev.history || [], today, jobs);
+
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
-  fs.writeFileSync(OUT, JSON.stringify({ updatedAt: new Date().toISOString(), refreshHours: REFRESH_HOURS, sources: statuses, jobs }));
+  fs.writeFileSync(OUT, JSON.stringify({ updatedAt: new Date().toISOString(), refreshHours: REFRESH_HOURS, sources: statuses, history, jobs }));
   console.log(`저장 완료: ${jobs.length}건 → ${path.relative(ROOT, OUT)}`);
 }
 
