@@ -10,8 +10,8 @@ export default {
   async fetchJobs() {
     const out = [];
     for (let page = 1; page <= PAGES; page++) {
-      // career=0: 신입 지원 가능, sort=reg_dt: 최신 등록순
-      const url = `${BASE}?sort=reg_dt&highlight=false&career=0&page=${page}`;
+      // sort=reg_dt: 최신 등록순. 신입 여부는 응답의 newcomer 값으로 구분(화면의 신입 필터에서 사용)
+      const url = `${BASE}?sort=reg_dt&highlight=false&page=${page}`;
       if (!(await robotsAllowed(url))) throw new Error('robots.txt에서 허용되지 않은 경로 → 수집하지 않음');
       const data = JSON.parse(await httpGet(url, { headers: { Accept: 'application/json' } }));
       const list = data?.result?.positions;
