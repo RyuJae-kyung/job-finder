@@ -2,7 +2,7 @@
 import { httpGet, robotsAllowed, parseDate, sleep } from '../util.js';
 
 const BASE = 'https://jumpit-api.saramin.co.kr/api/positions';
-const PAGES = 5;
+const PAGES = 15;
 
 export default {
   id: 'jumpit',
